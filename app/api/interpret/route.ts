@@ -17,6 +17,7 @@
 
 import net from 'node:net';
 import { lookupDatasetReading, formatDatasetReference } from '@/lib/ziwei/dataset-lookup';
+import { lookupDatasetReadingRemote } from '@/lib/ziwei/dataset-remote';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,10 +100,14 @@ export async function POST(req: Request) {
     return Response.json({ error: 'messages-required' }, { status: 400 });
   }
 
-  // 参考底本：按生日时辰性别查 v4 数据集，查不到就走纯 AI 解读，不报错
+  // 参考底本：先查本地解压版数据集（本机有），没有再按需从 GitHub Release
+  // 拉当年 zstd 流式解压查（线上 Vercel 用这条路）；查不到就走纯 AI 解读，不报错
   const lastUser = [...messages].reverse().find((m) => m.role === 'user');
   const chartObj = body.chart as { birthInfo?: unknown } | null;
-  const reading = await lookupDatasetReading(chartObj?.birthInfo ?? null).catch(() => null);
+  const birthInfo = chartObj?.birthInfo ?? null;
+  const reading =
+    (await lookupDatasetReading(birthInfo).catch(() => null)) ??
+    (await lookupDatasetReadingRemote(birthInfo).catch(() => null));
   const reference = reading ? formatDatasetReference(reading, lastUser?.content ?? '') : null;
 
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '');
